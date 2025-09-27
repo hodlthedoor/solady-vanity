@@ -1,0 +1,15 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build fixture test
+        run: g++ -std=c++17 -Isrc tests/fixture_test.cpp -o fixture_test
+      - name: Run fixture test
+        run: ./fixture_test
