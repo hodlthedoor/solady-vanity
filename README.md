@@ -61,7 +61,7 @@ Replace `--prefix` with your desired hex prefix and set `--deployer` to the addr
 ```bash
 ./run.sh \
   --deployer 0xYourCreate3FactoryAddressHere \
-  --prefix d0000000
+  --prefix 00000000
 ```
 
 The script builds the CUDA binary and starts searching. Output shows hash rate, estimated time to match, and successful salts. Each hit is displayed and appended to `results.txt` automatically.
