@@ -2,7 +2,6 @@
 
 A CUDA-accelerated vanity address generator for Solady's CREATE3. This tool searches for salts that make a deployed contract address match a desired prefix. Results stream to the console and are automatically appended to `results.txt`.
 
-> _This project was pair programmed with Codex (no other AI tools) as an experiment, and the collaboration was successful._
 
 ## Requirements
 
