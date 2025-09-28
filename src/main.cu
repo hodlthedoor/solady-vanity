@@ -2,12 +2,14 @@
 
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -121,6 +123,42 @@ void usage(const char *prog) {
     std::cerr << "Usage: " << prog << " --deployer <addr> --init-hash <hash> --prefix <hex>" << std::endl;
 }
 
+std::string format_duration(double seconds) {
+    if (!std::isfinite(seconds)) {
+        return "∞";
+    }
+    if (seconds < 1.0) {
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(2) << seconds << "s";
+        return oss.str();
+    }
+    const double max_seconds = static_cast<double>(std::numeric_limits<long long>::max());
+    if (seconds >= max_seconds) {
+        return "∞";
+    }
+    const long long total_seconds = static_cast<long long>(std::llround(seconds));
+    long long remaining = total_seconds;
+    const long long days = remaining / 86'400;
+    remaining %= 86'400;
+    const long long hours = remaining / 3'600;
+    remaining %= 3'600;
+    const long long minutes = remaining / 60;
+    const long long secs = remaining % 60;
+
+    std::ostringstream oss;
+    if (days > 0) {
+        oss << days << "d ";
+    }
+    if (hours > 0 || days > 0) {
+        oss << hours << "h ";
+    }
+    if (minutes > 0 || hours > 0 || days > 0) {
+        oss << minutes << "m ";
+    }
+    oss << secs << "s";
+    return oss.str();
+}
+
 int main(int argc, char **argv) {
     std::string deployer_hex;
     std::string init_hex;
@@ -145,6 +183,8 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
+    const std::string clean_prefix = strip_0x(prefix_hex);
+
     std::array<uint8_t, 20> deployer{};
     std::array<uint8_t, 32> init_hash{};
     std::array<uint8_t, 20> target{};
@@ -165,6 +205,13 @@ int main(int argc, char **argv) {
         std::cerr << "Invalid prefix" << std::endl;
         return EXIT_FAILURE;
     }
+
+    const std::size_t prefix_nibbles = clean_prefix.size();
+    long double expected_hashes_per_hit = 1.0L;
+    for (std::size_t i = 0; i < prefix_nibbles; ++i) {
+        expected_hashes_per_hit *= 16.0L;
+    }
+    const double expected_hashes_per_hit_double = static_cast<double>(expected_hashes_per_hit);
 
     CUDA_CHECK(cudaMemcpyToSymbol(c_deployer, deployer.data(), deployer.size()));
     CUDA_CHECK(cudaMemcpyToSymbol(c_init_hash, init_hash.data(), init_hash.size()));
@@ -204,10 +251,13 @@ int main(int argc, char **argv) {
         std::cout << std::flush;
         last_status_length = line.size();
     };
-    const auto format_status_line = [&](double mh_per_second) {
+    const auto format_status_line = [&](double mh_per_second, double elapsed_seconds,
+                                        double expected_seconds) {
         std::ostringstream line;
         line << "[Status] Found " << total_found << " | " << std::fixed << std::setprecision(2)
-             << mh_per_second << " MH/s";
+             << mh_per_second << " MH/s"
+             << " | Runtime " << format_duration(elapsed_seconds)
+             << " | ETA " << format_duration(expected_seconds);
         return line.str();
     };
 
@@ -217,7 +267,7 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
-    print_status_line(format_status_line(0.0));
+    print_status_line(format_status_line(0.0, 0.0, std::numeric_limits<double>::infinity()));
 
     while (true) {
         grind<<<grid_dim, block_dim>>>(salt_base, d_hit_salt, d_found_flag);
@@ -234,7 +284,11 @@ int main(int argc, char **argv) {
                                                ? static_cast<double>(total_checked) / elapsed
                                                : 0.0;
             const double mh_per_second = hashes_per_second / 1'000'000.0;
-            print_status_line(format_status_line(mh_per_second));
+            const double expected_seconds =
+                hashes_per_second > 0.0
+                    ? expected_hashes_per_hit_double / hashes_per_second
+                    : std::numeric_limits<double>::infinity();
+            print_status_line(format_status_line(mh_per_second, elapsed, expected_seconds));
             last_status = now;
         }
 
@@ -294,7 +348,14 @@ int main(int argc, char **argv) {
                                                ? static_cast<double>(total_checked) / elapsed
                                                : 0.0;
             const double mh_per_second = hashes_per_second / 1'000'000.0;
-            print_status_line(format_status_line(mh_per_second));
+            const double expected_seconds =
+                hashes_per_second > 0.0
+                    ? expected_hashes_per_hit_double / hashes_per_second
+                    : std::numeric_limits<double>::infinity();
+            std::cout << "[Hit] elapsed: " << format_duration(elapsed) << std::endl;
+            std::cout << "[Hit] expected time at current rate: "
+                      << format_duration(expected_seconds) << std::endl;
+            print_status_line(format_status_line(mh_per_second, elapsed, expected_seconds));
 
             CUDA_CHECK(cudaMemset(d_found_flag, 0, sizeof(int)));
         }
