@@ -10,6 +10,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <random>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -231,7 +232,17 @@ int main(int argc, char **argv) {
     const dim3 grid_dim(4096);
     const uint64_t stride = static_cast<uint64_t>(block_dim.x) * grid_dim.x;
 
-    uint64_t salt_base = 0;
+    std::random_device rd;
+    std::mt19937_64 gen(rd());
+    std::uniform_int_distribution<uint64_t> dist(0, std::numeric_limits<uint64_t>::max());
+    const uint64_t initial_salt_base = dist(gen);
+    uint64_t salt_base = initial_salt_base;
+    {
+        std::ostringstream oss;
+        oss << "[Info] Starting salt search from base 0x" << std::hex << std::setw(16)
+            << std::setfill('0') << initial_salt_base;
+        std::cout << oss.str() << std::dec << std::setfill(' ') << std::endl;
+    }
     uint64_t total_checked = 0;
     uint64_t total_found = 0;
     auto start_time = std::chrono::steady_clock::now();
