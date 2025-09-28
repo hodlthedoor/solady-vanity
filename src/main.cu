@@ -113,8 +113,11 @@ std::string checksum_address(const uint8_t address[20]) {
     return out;
 }
 
+constexpr const char kDefaultSoladyInitHash[] =
+    "0x21c35dbe1b344a2488cf3321d6ce542f8e9f305544ff09e4993a62319a497c1f";
+
 void usage(const char *prog) {
-    std::cerr << "Usage: " << prog << " --deployer <addr> --init-hash <hash> --prefix <hex>" << std::endl;
+    std::cerr << "Usage: " << prog << " --deployer <addr> --prefix <hex> [--init-hash <hash>]" << std::endl;
 }
 
 std::string format_duration(double seconds) {
@@ -172,9 +175,13 @@ int main(int argc, char **argv) {
         }
     }
 
-    if (deployer_hex.empty() || init_hex.empty() || prefix_hex.empty()) {
+    if (deployer_hex.empty() || prefix_hex.empty()) {
         usage(argv[0]);
         return EXIT_FAILURE;
+    }
+
+    if (init_hex.empty()) {
+        init_hex = kDefaultSoladyInitHash;
     }
 
     const std::string clean_prefix = strip_0x(prefix_hex);

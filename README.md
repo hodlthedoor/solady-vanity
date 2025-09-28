@@ -1,6 +1,6 @@
 # Solady Vanity (CUDA)
 
-A CUDA-accelerated vanity address generator for Solady's CREATE3. This tool searches for salts that make a deployed contract address match a desired prefix. Results are printed to the console and saved to a `results.txt` log when piped through `tee`.
+A CUDA-accelerated vanity address generator for Solady's CREATE3. This tool searches for salts that make a deployed contract address match a desired prefix. Results stream to the console and are automatically appended to `results.txt`.
 
 > _This project was pair programmed with Codex (no other AI tools) as an experiment, and the collaboration was successful._
 
@@ -57,16 +57,17 @@ chmod +x run.sh
 
 ### 6. Run the Vanity Search
 
-Replace `--prefix` with your desired hex prefix. Use `0x0000000000000000000000000000000000000000` as the deployer (placeholder). The `--init-hash` must be the init code hash of your target contract.
+Replace `--prefix` with your desired hex prefix. Use `0x0000000000000000000000000000000000000000` as the deployer (placeholder). By default the tool uses Solady's CREATE3 init code hash; pass `--init-hash` if you need to override it for a custom contract.
 
 ```bash
 ./run.sh \
   --deployer 0x0000000000000000000000000000000000000000 \
-  --init-hash 0x21c35dbe1b344a2488cf3321d6ce542f8e9f305544ff09e4993a62319a497c1f \
-  --prefix d0000000 | tee results.txt
+  --prefix d0000000
 ```
 
-The script builds the CUDA binary and starts searching. Output shows hash rate, estimated time to match, and successful salts. Results stream to the console and are saved in `results.txt` when using the `tee` command.
+The script builds the CUDA binary and starts searching. Output shows hash rate, estimated time to match, and successful salts. Each hit is displayed and appended to `results.txt` automatically.
+
+> _Default init code hash_: `0x21c35dbe1b344a2488cf3321d6ce542f8e9f305544ff09e4993a62319a497c1f` (Solady CREATE3). Provide `--init-hash` if your target contract differs.
 
 ### 7. Run Persistently
 
