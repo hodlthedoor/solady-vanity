@@ -185,14 +185,39 @@ int main(int argc, char **argv) {
 
     uint64_t salt_base = 0;
     uint64_t total_checked = 0;
+    uint64_t total_found = 0;
     auto start_time = std::chrono::steady_clock::now();
     auto last_status = start_time;
+
+    std::size_t last_status_length = 0;
+    const auto clear_status_line = [&]() {
+        if (last_status_length > 0) {
+            std::cout << '\r' << std::string(last_status_length, ' ') << '\r' << std::flush;
+            last_status_length = 0;
+        }
+    };
+    const auto print_status_line = [&](const std::string &line) {
+        std::cout << '\r' << line;
+        if (line.size() < last_status_length) {
+            std::cout << std::string(last_status_length - line.size(), ' ');
+        }
+        std::cout << std::flush;
+        last_status_length = line.size();
+    };
+    const auto format_status_line = [&](double mh_per_second) {
+        std::ostringstream line;
+        line << "[Status] Found " << total_found << " | " << std::fixed << std::setprecision(2)
+             << mh_per_second << " MH/s";
+        return line.str();
+    };
 
     std::ofstream result_file("results.txt", std::ios::app);
     if (!result_file) {
         std::cerr << "Failed to open results.txt for writing" << std::endl;
         return EXIT_FAILURE;
     }
+
+    print_status_line(format_status_line(0.0));
 
     while (true) {
         grind<<<grid_dim, block_dim>>>(salt_base, d_hit_salt, d_found_flag);
@@ -208,11 +233,8 @@ int main(int argc, char **argv) {
             const double hashes_per_second = elapsed > 0.0
                                                ? static_cast<double>(total_checked) / elapsed
                                                : 0.0;
-            std::ostringstream status_stream;
-            status_stream << std::fixed << std::setprecision(2)
-                          << (hashes_per_second / 1'000'000.0);
-            std::cout << "[Status] Checked " << total_checked << " salts ("
-                      << status_stream.str() << " MH/s)" << std::endl;
+            const double mh_per_second = hashes_per_second / 1'000'000.0;
+            print_status_line(format_status_line(mh_per_second));
             last_status = now;
         }
 
@@ -256,12 +278,23 @@ int main(int argc, char **argv) {
             const std::string salt_hex = bytes_to_hex(salt_bytes.data(), salt_bytes.size(), true);
             const std::string address_checksum = checksum_address(final_address);
 
+            clear_status_line();
+
             std::cout << "[Hit] salt: 0x" << salt_hex << std::endl;
             std::cout << "[Hit] address: " << address_checksum << std::endl;
 
             result_file << "salt: 0x" << salt_hex << ", address: " << address_checksum
                          << std::endl;
             result_file.flush();
+
+            ++total_found;
+
+            const double elapsed = std::chrono::duration<double>(now - start_time).count();
+            const double hashes_per_second = elapsed > 0.0
+                                               ? static_cast<double>(total_checked) / elapsed
+                                               : 0.0;
+            const double mh_per_second = hashes_per_second / 1'000'000.0;
+            print_status_line(format_status_line(mh_per_second));
 
             CUDA_CHECK(cudaMemset(d_found_flag, 0, sizeof(int)));
         }
