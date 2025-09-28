@@ -99,11 +99,7 @@ HD void keccak_f1600(uint64_t state[25]) {
 }
 
 HD void keccak256(const uint8_t *data, std::size_t len, uint8_t out[32]) {
-    uint64_t state[25];
-#if defined(__CUDA_ARCH__)
-#pragma unroll
-#endif
-    for (int i = 0; i < 25; ++i) state[i] = 0;
+    uint64_t state[25] = {};
 
     constexpr std::size_t rate = 136;
 
@@ -127,32 +123,26 @@ HD void keccak256(const uint8_t *data, std::size_t len, uint8_t out[32]) {
         len -= rate;
     }
 
-    uint8_t block[rate];
-#if defined(__CUDA_ARCH__)
-#pragma unroll
-#endif
-    for (std::size_t i = 0; i < rate; ++i) block[i] = 0;
+    uint64_t block[rate / 8] = {};
 #if defined(__CUDA_ARCH__)
 #pragma unroll
 #endif
     for (std::size_t i = 0; i < len; ++i) {
-        block[i] = data[offset + i];
+        const std::size_t lane = i / 8;
+        const std::size_t shift = (i % 8) * 8;
+        block[lane] |= static_cast<uint64_t>(data[offset + i]) << shift;
     }
-    block[len] ^= 0x01;
-    block[rate - 1] ^= 0x80;
+
+    const std::size_t pad_lane = len / 8;
+    const std::size_t pad_shift = (len % 8) * 8;
+    block[pad_lane] ^= static_cast<uint64_t>(0x01) << pad_shift;
+    block[(rate / 8) - 1] ^= 0x80ULL << 56;
 
 #if defined(__CUDA_ARCH__)
 #pragma unroll
 #endif
     for (std::size_t i = 0; i < rate / 8; ++i) {
-        uint64_t lane = 0;
-#if defined(__CUDA_ARCH__)
-#pragma unroll
-#endif
-        for (int b = 0; b < 8; ++b) {
-            lane |= static_cast<uint64_t>(block[8 * i + b]) << (8 * b);
-        }
-        state[i] ^= lane;
+        state[i] ^= block[i];
     }
     keccak_f1600(state);
 
