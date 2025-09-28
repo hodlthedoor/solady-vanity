@@ -254,18 +254,25 @@ int main(int argc, char **argv) {
     const auto format_status_line = [&](double mh_per_second, double elapsed_seconds,
                                         double expected_seconds) {
         std::ostringstream line;
+        double display_rate = mh_per_second;
+        const char *unit = "MH/s";
+        if (display_rate >= 1000.0) {
+            display_rate /= 1000.0;
+            unit = "GH/s";
+        }
         line << "[Status] Found " << total_found << " | " << std::fixed << std::setprecision(2)
-             << mh_per_second << " MH/s"
+             << display_rate << ' ' << unit
              << " | Runtime " << format_duration(elapsed_seconds)
              << " | ETA " << format_duration(expected_seconds);
         return line.str();
     };
 
-    std::ofstream result_file("results.txt", std::ios::app);
+    std::ofstream result_file("results.txt", std::ios::out | std::ios::app);
     if (!result_file) {
         std::cerr << "Failed to open results.txt for writing" << std::endl;
         return EXIT_FAILURE;
     }
+    result_file.seekp(0, std::ios::end);
 
     print_status_line(format_status_line(0.0, 0.0, std::numeric_limits<double>::infinity()));
 
