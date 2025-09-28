@@ -35,10 +35,12 @@ __global__ void grind(uint64_t salt_base, uint64_t *hit_salt, int *found_flag) {
 
     const uint64_t idx = salt_base + blockIdx.x * blockDim.x + threadIdx.x;
 
-    uint8_t salt[32];
+    uint8_t salt[32] = {};
+    uint64_t tmp_idx = idx;
 #pragma unroll
-    for (int b = 0; b < 32; ++b) {
-        salt[31 - b] = static_cast<uint8_t>((idx >> (b * 8)) & 0xFF);
+    for (int b = 0; b < static_cast<int>(sizeof(idx)); ++b) {
+        salt[31 - b] = static_cast<uint8_t>(tmp_idx & 0xFF);
+        tmp_idx >>= 8;
     }
 
     uint8_t pre[85];
@@ -198,8 +200,10 @@ int main(int argc, char **argv) {
     CUDA_CHECK(cudaFree(d_found_flag));
 
     std::array<uint8_t, 32> salt_bytes{};
-    for (int b = 0; b < 32; ++b) {
-        salt_bytes[31 - b] = static_cast<uint8_t>((host_hit_salt >> (8 * b)) & 0xFF);
+    uint64_t tmp_host_salt = host_hit_salt;
+    for (int b = 0; b < static_cast<int>(sizeof(host_hit_salt)); ++b) {
+        salt_bytes[31 - b] = static_cast<uint8_t>(tmp_host_salt & 0xFF);
+        tmp_host_salt >>= 8;
     }
 
     uint8_t pre[85];
