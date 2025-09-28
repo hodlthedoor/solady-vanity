@@ -1,10 +1,15 @@
 #include <cuda_runtime.h>
 
 #include <array>
+#include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -180,61 +185,102 @@ int main(int argc, char **argv) {
     const uint64_t stride = static_cast<uint64_t>(block_dim.x) * grid_dim.x;
 
     uint64_t salt_base = 0;
-    uint64_t host_hit_salt = 0;
+    uint64_t total_checked = 0;
+    std::size_t found_count = 0;
+    auto start_time = std::chrono::steady_clock::now();
+    auto last_status = start_time;
+
+    std::ofstream result_file("results.txt", std::ios::app);
+    if (!result_file) {
+        std::cerr << "Failed to open results.txt for writing" << std::endl;
+        return EXIT_FAILURE;
+    }
 
     while (true) {
         grind<<<grid_dim, block_dim>>>(salt_base, d_hit_salt, d_found_flag);
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaDeviceSynchronize());
 
+        salt_base += stride;
+        total_checked += stride;
+
+        const auto now = std::chrono::steady_clock::now();
+        if (now - last_status >= std::chrono::seconds(1)) {
+            const double elapsed = std::chrono::duration<double>(now - start_time).count();
+            const double hashes_per_second = elapsed > 0.0
+                                               ? static_cast<double>(total_checked) / elapsed
+                                               : 0.0;
+            std::ostringstream status_stream;
+            status_stream << std::fixed << std::setprecision(2)
+                          << (hashes_per_second / 1'000'000.0);
+            std::ostringstream line;
+            line << "[Status] Hashrate: " << status_stream.str() << " MH/s | Found: "
+                 << found_count;
+            const std::string &status_line = line.str();
+            static std::size_t last_length = 0;
+            std::cout << '\r' << status_line;
+            if (status_line.size() < last_length) {
+                std::cout << std::string(last_length - status_line.size(), ' ');
+                std::cout << '\r' << status_line;
+            }
+            last_length = status_line.size();
+            std::cout << std::flush;
+            last_status = now;
+        }
+
         int found = 0;
         CUDA_CHECK(cudaMemcpy(&found, d_found_flag, sizeof(int), cudaMemcpyDeviceToHost));
         if (found) {
+            std::cout << '\r' << std::string(120, ' ') << '\r' << std::flush;
+            uint64_t host_hit_salt = 0;
             CUDA_CHECK(cudaMemcpy(&host_hit_salt, d_hit_salt, sizeof(uint64_t), cudaMemcpyDeviceToHost));
-            break;
+
+            std::array<uint8_t, 32> salt_bytes{};
+            uint64_t tmp_host_salt = host_hit_salt;
+            for (int b = 0; b < static_cast<int>(sizeof(host_hit_salt)); ++b) {
+                salt_bytes[31 - b] = static_cast<uint8_t>(tmp_host_salt & 0xFF);
+                tmp_host_salt >>= 8;
+            }
+
+            uint8_t pre[85];
+            pre[0] = 0xFF;
+            std::memcpy(pre + 1, deployer.data(), deployer.size());
+            std::memcpy(pre + 21, salt_bytes.data(), salt_bytes.size());
+            std::memcpy(pre + 53, init_hash.data(), init_hash.size());
+
+            uint8_t h1[32];
+            keccak256(pre, sizeof(pre), h1);
+
+            uint8_t proxy[20];
+            for (int i = 0; i < 20; ++i) proxy[i] = h1[12 + i];
+
+            uint8_t rlp_bytes[23];
+            rlp_addr_nonce(rlp_bytes, proxy);
+
+            uint8_t h2[32];
+            keccak256(rlp_bytes, sizeof(rlp_bytes), h2);
+            const uint8_t *final_address = h2 + 12;
+
+            if (!starts_with_prefix(final_address, target, cmp_bytes, has_odd, last_mask)) {
+                std::cerr << "Internal error: found salt does not satisfy prefix" << std::endl;
+                return EXIT_FAILURE;
+            }
+
+            const std::string salt_hex = bytes_to_hex(salt_bytes.data(), salt_bytes.size(), true);
+            const std::string address_checksum = checksum_address(final_address);
+
+            std::cout << "[Hit] salt: 0x" << salt_hex << std::endl;
+            std::cout << "[Hit] address: " << address_checksum << std::endl;
+
+            result_file << "salt: 0x" << salt_hex << ", address: " << address_checksum
+                         << std::endl;
+            result_file.flush();
+
+            CUDA_CHECK(cudaMemset(d_found_flag, 0, sizeof(int)));
+            ++found_count;
+            last_status = std::chrono::steady_clock::time_point{};
         }
-        salt_base += stride;
     }
-
-    CUDA_CHECK(cudaFree(d_hit_salt));
-    CUDA_CHECK(cudaFree(d_found_flag));
-
-    std::array<uint8_t, 32> salt_bytes{};
-    uint64_t tmp_host_salt = host_hit_salt;
-    for (int b = 0; b < static_cast<int>(sizeof(host_hit_salt)); ++b) {
-        salt_bytes[31 - b] = static_cast<uint8_t>(tmp_host_salt & 0xFF);
-        tmp_host_salt >>= 8;
-    }
-
-    uint8_t pre[85];
-    pre[0] = 0xFF;
-    std::memcpy(pre + 1, deployer.data(), deployer.size());
-    std::memcpy(pre + 21, salt_bytes.data(), salt_bytes.size());
-    std::memcpy(pre + 53, init_hash.data(), init_hash.size());
-
-    uint8_t h1[32];
-    keccak256(pre, sizeof(pre), h1);
-
-    uint8_t proxy[20];
-    for (int i = 0; i < 20; ++i) proxy[i] = h1[12 + i];
-
-    uint8_t rlp_bytes[23];
-    rlp_addr_nonce(rlp_bytes, proxy);
-
-    uint8_t h2[32];
-    keccak256(rlp_bytes, sizeof(rlp_bytes), h2);
-    const uint8_t *final_address = h2 + 12;
-
-    if (!starts_with_prefix(final_address, target, cmp_bytes, has_odd, last_mask)) {
-        std::cerr << "Internal error: found salt does not satisfy prefix" << std::endl;
-        return EXIT_FAILURE;
-    }
-
-    const std::string salt_hex = bytes_to_hex(salt_bytes.data(), salt_bytes.size(), true);
-    const std::string address_checksum = checksum_address(final_address);
-
-    std::cout << "salt: 0x" << salt_hex << std::endl;
-    std::cout << "address: " << address_checksum << std::endl;
 
     return EXIT_SUCCESS;
 }
