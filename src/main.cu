@@ -37,36 +37,30 @@ __constant__ uint8_t c_last_mask;
     } while (0)
 
 __global__ void grind(uint64_t salt_base, uint64_t *hit_salt, int *found_flag) {
-    if (atomicAdd(found_flag, 0)) return;
+    if (*reinterpret_cast<volatile int *>(found_flag)) return;
 
     const uint64_t idx = salt_base + blockIdx.x * blockDim.x + threadIdx.x;
-
-    uint8_t salt[32] = {};
-    uint64_t tmp_idx = idx;
-#pragma unroll
-    for (int b = 0; b < static_cast<int>(sizeof(idx)); ++b) {
-        salt[31 - b] = static_cast<uint8_t>(tmp_idx & 0xFF);
-        tmp_idx >>= 8;
-    }
 
     uint8_t pre[85];
     pre[0] = 0xFF;
 #pragma unroll
     for (int i = 0; i < 20; ++i) pre[1 + i] = c_deployer[i];
 #pragma unroll
-    for (int i = 0; i < 32; ++i) pre[21 + i] = salt[i];
+    for (int i = 0; i < 32; ++i) pre[21 + i] = 0;
+    uint64_t tmp_idx = idx;
+#pragma unroll
+    for (int b = 0; b < static_cast<int>(sizeof(idx)); ++b) {
+        pre[52 - b] = static_cast<uint8_t>(tmp_idx & 0xFF);
+        tmp_idx >>= 8;
+    }
 #pragma unroll
     for (int i = 0; i < 32; ++i) pre[53 + i] = c_init_hash[i];
 
     uint8_t h1[32];
     keccak256(pre, sizeof(pre), h1);
 
-    uint8_t proxy[20];
-#pragma unroll
-    for (int i = 0; i < 20; ++i) proxy[i] = h1[12 + i];
-
     uint8_t rlp_bytes[23];
-    rlp_addr_nonce(rlp_bytes, proxy);
+    rlp_addr_nonce(rlp_bytes, h1 + 12);
 
     uint8_t h2[32];
     keccak256(rlp_bytes, sizeof(rlp_bytes), h2);
