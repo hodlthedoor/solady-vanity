@@ -56,11 +56,11 @@ chmod +x run.sh
 
 ### 6. Run the Vanity Search
 
-Replace `--prefix` with your desired hex prefix. Use `0x0000000000000000000000000000000000000000` as the deployer (placeholder). By default the tool uses Solady's CREATE3 init code hash; pass `--init-hash` if you need to override it for a custom contract.
+Replace `--prefix` with your desired hex prefix and set `--deployer` to the address of your CREATE3 factory contract. By default the tool uses Solady's CREATE3 init code hash; pass `--init-hash` if you need to override it for a custom contract.
 
 ```bash
 ./run.sh \
-  --deployer 0x0000000000000000000000000000000000000000 \
+  --deployer 0xYourCreate3FactoryAddressHere \
   --prefix d0000000
 ```
 
