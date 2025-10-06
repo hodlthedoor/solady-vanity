@@ -13,7 +13,7 @@ A CUDA-accelerated vanity address generator for Solady's CREATE3. This tool sear
 
 ### 1. Rent a GPU VM
 
-1. Log in to [Vast.ai](https://vast.ai/).
+1. Log in to [Vast.ai](https://cloud.vast.ai/?ref_id=321553) << (affiliate link)
 2. Navigate to **Templates → NVIDIA CUDA → ▶ Play**.
 3. Choose an Ubuntu 22.04 CUDA image with a GPU attached.
 4. Rent the instance.
